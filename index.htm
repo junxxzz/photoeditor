@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <input type="file" name="userfile" id="userfile">
+    <div id="tools">
+        <div class="tool" onclick="Images.reduce()">축소</div>
+        <div class="tool" onclick="Images.enlarge()">확대</div>
+    </div>
+    <div id="userfile_dp"></div>
+
+    <style>
+        #tools {
+            display: flex; gap: .5rem;
+        }
+        .tool {
+            border: solid 1px black; padding: .5rem; user-select: none;
+        }
+        #userfile_dp {
+            border: solid 1px black;
+            width: 600px;
+            height: 400px;
+        }
+    </style>
+    <script>
+        const Images = {
+            pos1: 0, pos2: 0, pos3: 0, pos4: 0, offsetTop:0, offsetLeft:0,
+            dpDiv: null,
+            originalImage: null, nowImage: null, nowCanvas: null,
+            attach(filefield, dpDiv) {
+                this.dpDiv = dpDiv;
+                this.dpDiv.style.overflow = 'hidden';
+                this.dpDiv.style.position = 'relative';
+                filefield.addEventListener('change', this.loadLocalImage);
+            },
+            loadLocalImage(evt) {
+                const files = evt.target.files;
+                if( !files.length ) {
+                    return;
+                }
+                const file = files[0];
+                const image = new Image;
+                image.src = URL.createObjectURL(file);
+                image.crossOrigin = 'Anonymous'; // CORS
+                image.addEventListener('load', () => Images.loadImage(image));
+            },
+            loadImage(img) {
+                this.originalImage = img;
+                this.nowImage = img;
+                this.applyImage(img);
+            },
+            applyImage(img) {
+                this.dpDiv.querySelector('canvas')?.remove()
+                const pixels = this.getPixels(img, 0, 0, this.dpDiv.clientWidth, this.dpDiv.clientHeight);
+                this.nowCanvas = this.makeCanvas(pixels, this.dpDiv.clientWidth, this.dpDiv.clientHeight);
+                this.dpDiv.appendChild(this.nowCanvas);
+                this.nowCanvas.style.position = 'absolute';
+                this.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+            },
+            enlarge() {
+                this.dpDiv.querySelector('canvas')?.remove()
+                const image = this.createCanvas(this.dpDiv.clientWidth, this.dpDiv.clientHeight);
+                const ctx = image.getContext('2d');
+                ctx.drawImage(this.nowCanvas, 0, 0, this.dpDiv.clientWidth*1.1, this.dpDiv.clientHeight*1.1)
+                this.nowCanvas = image;
+                this.dpDiv.appendChild(this.nowCanvas);
+                this.nowCanvas.style.position = 'absolute';
+                this.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+            },
+            reduce() {
+                this.dpDiv.querySelector('canvas')?.remove()
+                // const pixels = this.getPixels(this.nowImage);
+                // this.nowCanvas = this.makeCanvas(pixels, this.dpDiv.clientWidth*0.9, this.dpDiv.clientHeight*0.9);
+
+                const image = this.createCanvas(this.dpDiv.clientWidth, this.dpDiv.clientHeight);
+                const ctx = image.getContext('2d');
+                console.log(Images.nowImage);
+                ctx.scale(0.5, 0.5)
+
+                if( Images.nowImage instanceof ImageData ) {
+                    console.log('imagedata');
+                    ctx.putImageData(Images.nowImage, 0, 0, 0, 0, this.dpDiv.clientWidth*0.9, this.dpDiv.clientHeight*0.9)
+                }
+                else {
+                const newimg = this.getPixels(Images.nowImage, Images.offsetLeft, Images.offsetTop)
+                    console.log('no imagedata');
+                    ctx.drawImage(newimg, 0, 0, newimg.width, newimg.height, 0, 0, this.dpDiv.clientWidth*0.9, this.dpDiv.clientHeight*0.9)
+                Images.nowImage = newimg
+                }
+
+                this.nowCanvas = image;
+
+                this.dpDiv.appendChild(this.nowCanvas);
+                this.nowCanvas.style.position = 'absolute';
+                this.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+            },
+            mouseDown(evt) {
+                evt.preventDefault();
+                Images.pos3 = evt.clientX;
+                Images.pos4 = evt.clientY;
+                document.addEventListener('mouseup', Images.closeDrag)
+                document.addEventListener('mousemove', Images.mouseDrag)
+            },
+            mouseDrag(evt) {
+                evt.preventDefault();
+                Images.pos1 = Images.pos3 - evt.clientX;
+                Images.pos2 = Images.pos4 - evt.clientY;
+                Images.pos3 = evt.clientX;
+                Images.pos4 = evt.clientY;
+                Images.offsetTop += Images.pos2;
+                Images.offsetLeft += Images.pos1;
+                if( Images.offsetLeft < 0 ) {
+                    Images.offsetLeft = 0;
+                }
+                else if( Images.offsetLeft > (Images.nowImage.width - Images.dpDiv.clientWidth) ) {
+                    Images.offsetLeft = Images.nowImage.width - Images.dpDiv.clientWidth;
+                }
+                if( Images.offsetTop < 0 ) {
+                    Images.offsetTop = 0;
+                }
+                else if( Images.offsetTop > (Images.nowImage.height - Images.dpDiv.clientHeight) ) {
+                    Images.offsetTop = Images.nowImage.height - Images.dpDiv.clientHeight;
+                }
+                const newimg = Images.getPixels(Images.nowImage, Images.offsetLeft, Images.offsetTop, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
+                Images.repaintCanvas(Images.nowCanvas, newimg);
+            },
+            closeDrag() {
+                document.removeEventListener('mouseup', Images.closeDrag)
+                document.removeEventListener('mousemove', Images.mouseDrag)
+            },
+            getPixels(img, x=0, y=0, w=0, h=0) {
+                if( !(img instanceof HTMLCanvasElement) ) {
+                    img = this.makeCanvas(img);
+                }
+                const ctx = img.getContext('2d');
+                return ctx.getImageData(x, y, w==0?img.width:w, h==0?img.height:h);
+            },
+            repaintCanvas(canvas, img) {
+                const ctx = canvas.getContext('2d');
+                ctx.putImageData(img, 0, 0)
+            },
+            makeCanvas(img, w, h) {
+                const image = this.createCanvas(w??img.width, h??img.height);
+                const ctx = image.getContext('2d');
+                if( img instanceof ImageData ) {
+                    console.log('imagedata');
+                    ctx.putImageData(img, 0, 0)
+                }
+                else {
+                    console.log('no imagedata');
+                    ctx.drawImage(img, 0, 0, img.width, img.height)
+                }
+                return image;
+            },
+            createCanvas(w, h) {
+                const c = document.createElement('canvas');
+                c.width = w, c.height= h;
+                return c;
+            },
+            crop(img, nx, ny, w, h) {
+                var w = w??img.width, h = h??img.height, pix = {x:[], y:[]}, x, y, index;
+                for (y = ny??0; y < h; y++) {
+                    for (x = nx??0; x < w; x++) {
+                        index = (y * w + x) * 4;
+                        if (img.data[index+3] > 0) {
+                            pix.x.push(x);
+                            pix.y.push(y);
+                        }
+                    }
+                }
+                let px = 0, py = 0;
+                if( pix.x.length && pix.y.length ) {
+                    pix.x.sort(function(a,b){return a-b});
+                    pix.y.sort(function(a,b){return a-b});
+                    const n = pix.x.length-1;
+                    w = 1 + pix.x[n] - pix.x[0];
+                    h = 1 + pix.y[n] - pix.y[0];
+                    px = pix.x[0];
+                    py = pix.y[0];
+                    const cut = this.getPixels(img, w, h, px, py);
+                    return cut;
+                }
+                else {
+                    return img;
+                }
+            }
+        };
+        (function() {
+            Images.attach(document.getElementById('userfile'), document.getElementById('userfile_dp'));
+        })();
+
+    </script>
+</body>
+</html>
