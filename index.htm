@@ -7,14 +7,20 @@
     <title>Document</title>
 </head>
 <body>
-    <input type="file" name="userfile" id="userfile">
-    <div id="tools">
-        <div class="tool" onclick="Images.reduce()">축소</div>
-        <div class="tool" onclick="Images.enlarge()">확대</div>
+    <div id="container">
+        <div id="userfile_dp"></div>
+        <div id="tools">
+            <div class="tool" onclick="Images.reduce()">축소</div>
+            <div class="tool" onclick="Images.enlarge()">확대</div>
+        </div>
+        <input type="file" name="userfile" id="userfile">
     </div>
-    <div id="userfile_dp"></div>
 
     <style>
+        #container {
+            width: 600px;
+            margin: 0 auto;
+        }
         #tools {
             display: flex; gap: .5rem;
         }
@@ -29,14 +35,14 @@
     </style>
     <script>
         const Images = {
-            pos1: 0, pos2: 0, pos3: 0, pos4: 0, offsetTop:0, offsetLeft:0,
+            pos1: 0, pos2: 0, pos3: 0, pos4: 0, offsetTop:0, offsetLeft:0, scale: 1,
             dpDiv: null,
-            originalImage: null, nowImage: null, nowCanvas: null,
+            originalImage: null, nowImage: null, nowCanvas: null, nowPixels: null, nowCtx: null,
             attach(filefield, dpDiv) {
-                this.dpDiv = dpDiv;
-                this.dpDiv.style.overflow = 'hidden';
-                this.dpDiv.style.position = 'relative';
-                filefield.addEventListener('change', this.loadLocalImage);
+                Images.dpDiv = dpDiv;
+                Images.dpDiv.style.overflow = 'hidden';
+                Images.dpDiv.style.position = 'relative';
+                filefield.addEventListener('change', Images.loadLocalImage);
             },
             loadLocalImage(evt) {
                 const files = evt.target.files;
@@ -44,60 +50,78 @@
                     return;
                 }
                 const file = files[0];
-                const image = new Image;
-                image.src = URL.createObjectURL(file);
-                image.crossOrigin = 'Anonymous'; // CORS
-                image.addEventListener('load', () => Images.loadImage(image));
+                Images.originalImage = new Image;
+                Images.originalImage.src = URL.createObjectURL(file);
+                Images.originalImage.crossOrigin = 'Anonymous'; // CORS
+                Images.originalImage.addEventListener('load', () => Images.loadImage(Images.originalImage));
             },
             loadImage(img) {
-                this.originalImage = img;
-                this.nowImage = img;
-                this.applyImage(img);
+                Images.nowImage = img;
+                Images.applyImage(img);
             },
             applyImage(img) {
-                this.dpDiv.querySelector('canvas')?.remove()
-                const pixels = this.getPixels(img, 0, 0, this.dpDiv.clientWidth, this.dpDiv.clientHeight);
-                this.nowCanvas = this.makeCanvas(pixels, this.dpDiv.clientWidth, this.dpDiv.clientHeight);
-                this.dpDiv.appendChild(this.nowCanvas);
-                this.nowCanvas.style.position = 'absolute';
-                this.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+                Images.dpDiv.querySelector('canvas')?.remove()
+                Images.nowPixels = Images.getPixels(img);
+                // Images.nowCanvas = Images.makeCanvas(Images.nowImage);
+                Images.dpDiv.appendChild(Images.nowCanvas);
+                Images.nowCanvas.style.position = 'absolute';
+                Images.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+                // setTimeout(() => {
+                //     Images.nowCanvas.toBlob(blob => {
+                //         Images.nowImage = URL.createObjectURL(blob)
+                //         URL.revokeObjectURL(Images.nowImage);
+                //         console.log(Images.nowImage);
+                //     }, 'image/jpeg', 1)
+                // }, 10);
             },
-            enlarge() {
-                this.dpDiv.querySelector('canvas')?.remove()
-                const image = this.createCanvas(this.dpDiv.clientWidth, this.dpDiv.clientHeight);
-                const ctx = image.getContext('2d');
-                ctx.drawImage(this.nowCanvas, 0, 0, this.dpDiv.clientWidth*1.1, this.dpDiv.clientHeight*1.1)
-                this.nowCanvas = image;
-                this.dpDiv.appendChild(this.nowCanvas);
-                this.nowCanvas.style.position = 'absolute';
-                this.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+            getPixels(img, x=0, y=0, w=0, h=0) {
+                if( !(img instanceof HTMLCanvasElement) ) {
+                    img = Images.makeCanvas(img, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight);
+                    Images.nowCanvas = img;
+                }
+                Images.nowCtx = img.getContext('2d');
+                return Images.nowCtx.getImageData(x, y, w==0?img.width:w, h==0?img.height:h);
             },
-            reduce() {
-                this.dpDiv.querySelector('canvas')?.remove()
-                // const pixels = this.getPixels(this.nowImage);
-                // this.nowCanvas = this.makeCanvas(pixels, this.dpDiv.clientWidth*0.9, this.dpDiv.clientHeight*0.9);
-
-                const image = this.createCanvas(this.dpDiv.clientWidth, this.dpDiv.clientHeight);
-                const ctx = image.getContext('2d');
-                console.log(Images.nowImage);
-                ctx.scale(0.5, 0.5)
-
-                if( Images.nowImage instanceof ImageData ) {
+            makeCanvas(img, w, h) {
+                const image = Images.createCanvas(w??img.width, h??img.height);
+                Images.nowCtx = image.getContext('2d');
+                if( img.width < w??img.width ) {
+                    Images.offsetLeft = parseInt(w/2) - parseInt(img.width/2);
+                }
+                if( img.height < h??img.height ) {
+                    Images.offsetTop = parseInt(h/2) - parseInt(img.height/2);
+                }
+                if( img instanceof ImageData ) {
                     console.log('imagedata');
-                    ctx.putImageData(Images.nowImage, 0, 0, 0, 0, this.dpDiv.clientWidth*0.9, this.dpDiv.clientHeight*0.9)
+                    Images.nowCtx.putImageData(img, Images.offsetLeft, Images.offsetTop)
                 }
                 else {
-                const newimg = this.getPixels(Images.nowImage, Images.offsetLeft, Images.offsetTop)
                     console.log('no imagedata');
-                    ctx.drawImage(newimg, 0, 0, newimg.width, newimg.height, 0, 0, this.dpDiv.clientWidth*0.9, this.dpDiv.clientHeight*0.9)
-                Images.nowImage = newimg
+                    Images.nowCtx.drawImage(img, Images.offsetLeft, Images.offsetTop, img.width, img.height)
                 }
-
-                this.nowCanvas = image;
-
-                this.dpDiv.appendChild(this.nowCanvas);
-                this.nowCanvas.style.position = 'absolute';
-                this.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+                return image;
+            },
+            createCanvas(w, h) {
+                const c = document.createElement('canvas');
+                c.width = w, c.height= h;
+                return c;
+            },
+            enlarge() {
+                Images.nowCtx.setTransform(1,0,0,1,0,0);
+                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
+                Images.scale += 0.1;
+                Images.nowCtx.setTransform(Images.scale,0,0,Images.scale,0,0);
+                Images.paintCanvas();
+            },
+            reduce() {
+                Images.nowCtx.setTransform(1,0,0,1,0,0);
+                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
+                Images.scale -= 0.1;
+                if( Images.scale <= 0 ) {
+                    Images.scale = 0.1;
+                }
+                Images.nowCtx.setTransform(Images.scale,0,0,Images.scale,0,0);
+                Images.paintCanvas();
             },
             mouseDown(evt) {
                 evt.preventDefault();
@@ -112,55 +136,47 @@
                 Images.pos2 = Images.pos4 - evt.clientY;
                 Images.pos3 = evt.clientX;
                 Images.pos4 = evt.clientY;
-                Images.offsetTop += Images.pos2;
-                Images.offsetLeft += Images.pos1;
-                if( Images.offsetLeft < 0 ) {
-                    Images.offsetLeft = 0;
-                }
-                else if( Images.offsetLeft > (Images.nowImage.width - Images.dpDiv.clientWidth) ) {
-                    Images.offsetLeft = Images.nowImage.width - Images.dpDiv.clientWidth;
-                }
-                if( Images.offsetTop < 0 ) {
-                    Images.offsetTop = 0;
-                }
-                else if( Images.offsetTop > (Images.nowImage.height - Images.dpDiv.clientHeight) ) {
-                    Images.offsetTop = Images.nowImage.height - Images.dpDiv.clientHeight;
-                }
-                const newimg = Images.getPixels(Images.nowImage, Images.offsetLeft, Images.offsetTop, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
-                Images.repaintCanvas(Images.nowCanvas, newimg);
+                Images.offsetTop -= Images.pos2;
+                Images.offsetLeft -= Images.pos1;
+                Images.nowCtx.setTransform(1,0,0,1,0,0);
+                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
+                Images.nowCtx.setTransform(Images.scale,0,0,Images.scale,0,0);
+                Images.paintCanvas();
             },
             closeDrag() {
                 document.removeEventListener('mouseup', Images.closeDrag)
                 document.removeEventListener('mousemove', Images.mouseDrag)
             },
-            getPixels(img, x=0, y=0, w=0, h=0) {
-                if( !(img instanceof HTMLCanvasElement) ) {
-                    img = this.makeCanvas(img);
-                }
-                const ctx = img.getContext('2d');
-                return ctx.getImageData(x, y, w==0?img.width:w, h==0?img.height:h);
-            },
-            repaintCanvas(canvas, img) {
-                const ctx = canvas.getContext('2d');
-                ctx.putImageData(img, 0, 0)
-            },
-            makeCanvas(img, w, h) {
-                const image = this.createCanvas(w??img.width, h??img.height);
-                const ctx = image.getContext('2d');
-                if( img instanceof ImageData ) {
-                    console.log('imagedata');
-                    ctx.putImageData(img, 0, 0)
-                }
-                else {
-                    console.log('no imagedata');
-                    ctx.drawImage(img, 0, 0, img.width, img.height)
-                }
-                return image;
-            },
-            createCanvas(w, h) {
-                const c = document.createElement('canvas');
-                c.width = w, c.height= h;
-                return c;
+            paintCanvas() {
+                console.log('Images.scale', Images.scale);
+                // if( Images.offsetLeft < 0 ) {
+                //     Images.offsetLeft = 0;
+                // }
+                const w = Images.scale * Images.originalImage.width;
+                const h = Images.scale * Images.originalImage.height;
+                // if( (w - Images.dpDiv.clientWidth) > 0 && Images.offsetLeft > (w - Images.dpDiv.clientWidth) ) {
+                //     Images.offsetLeft = w - Images.dpDiv.clientWidth;
+                // }
+                // else if( Images.offsetLeft > (Images.dpDiv.clientWidth - w) ) {
+                //     Images.offsetLeft = Images.dpDiv.clientWidth - w;
+                // }
+                // if( Images.offsetTop < 0 ) {
+                //     Images.offsetTop = 0;
+                // }
+                // if( Images.offsetTop > (h - Images.dpDiv.clientHeight) ) {
+                //     Images.offsetTop = h - Images.dpDiv.clientHeight;
+                // }
+                // else if( Images.offsetTop < (Images.dpDiv.clientHeight - h) ) {
+                //     Images.offsetTop = Images.dpDiv.clientHeight - h;
+                // }
+                Images.nowCtx.imageSmoothingQuality = 'high'
+                Images.nowCtx.drawImage(Images.originalImage, Images.offsetLeft, Images.offsetTop)
+                // Images.nowCtx.drawImage(Images.nowImage, Images.offsetLeft*-1, Images.offsetTop*-1)
+                // Images.nowCanvas.toBlob(blob => {
+                //     Images.nowImage = new Image;
+                //     Images.nowImage.src = URL.createObjectURL(blob)
+                //     Images.nowImage.crossOrigin = 'Anonymous'; // CORS
+                // }, 'image/jpeg', 1)
             },
             crop(img, nx, ny, w, h) {
                 var w = w??img.width, h = h??img.height, pix = {x:[], y:[]}, x, y, index;
@@ -182,7 +198,7 @@
                     h = 1 + pix.y[n] - pix.y[0];
                     px = pix.x[0];
                     py = pix.y[0];
-                    const cut = this.getPixels(img, w, h, px, py);
+                    const cut = Images.getPixels(img, w, h, px, py);
                     return cut;
                 }
                 else {
