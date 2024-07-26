@@ -3,23 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Document</title>
 </head>
 <body>
     <div id="container">
         <div id="userfile_dp"></div>
         <div id="tools">
+            <div class="tool" onclick="Images.loadOrigin()">원본</div>
             <div class="tool" onclick="Images.reduce()">축소</div>
             <div class="tool" onclick="Images.enlarge()">확대</div>
+            <div class="tool" onclick="Images.setSelection(this)">영역선택</div>
+            <div class="tool" onclick="Images.cropSelection()">잘라내기</div>
         </div>
         <input type="file" name="userfile" id="userfile">
     </div>
 
     <style>
         #container {
-            width: 600px;
+            width: 360px;
+            min-width: 360px;
+            max-width: 360px;
             margin: 0 auto;
+            display: flex;
+            gap: .5rem;
+            flex-direction: column;
         }
         #tools {
             display: flex; gap: .5rem;
@@ -27,18 +35,44 @@
         .tool {
             border: solid 1px black; padding: .5rem; user-select: none;
         }
+        .tool.active {
+            color: red;
+        }
         #userfile_dp {
             border: solid 1px black;
-            width: 600px;
-            height: 400px;
+            width: 360px;
+            min-width: 360px;
+            max-width: 360px;
+            height: 600px;
+            background-color: rgba(173, 216, 230, 0.473);
+        }
+        #ImagesNowCanvas {
+            position: absolute;
+            z-index: 10;
+        }
+        #ImagesNewBg {
+            position: absolute;
+            z-index: 11;
+            background-color: rgb(0,0,0,0.5);
+        }
+        #ImagesNewSelection {
+            position: absolute;
+            z-index: 12;
+            background-color: rgb(255,255,255,0.5);
+            width: 200px;
+            height: 300px;
         }
     </style>
+    <script src="fastclick.js"></script>
     <script>
         const Images = {
-            pos1: 0, pos2: 0, pos3: 0, pos4: 0, offsetTop:0, offsetLeft:0, scale: 1,
-            dpDiv: null,
+            pos1: 0, pos2: 0, pos3: 0, pos4: 0,
+            spos1: 0, spos2: 0, spos3: 0, spos4: 0,
+            offsetTop:0, offsetLeft:0,
+            dpDiv: null, selectionMode: false,
             originalImage: null, nowImage: null, nowCanvas: null, nowPixels: null, nowCtx: null,
             attach(filefield, dpDiv) {
+                FastClick.attach(document.body);
                 Images.dpDiv = dpDiv;
                 Images.dpDiv.style.overflow = 'hidden';
                 Images.dpDiv.style.position = 'relative';
@@ -49,23 +83,51 @@
                 if( !files.length ) {
                     return;
                 }
+                Images.pos1 = 0, Images.pos2 = 0, Images.pos3 = 0, Images.pos4 = 0;
+                Images.spos1 = 0, Images.spos2 = 0, Images.spos3 = 0, Images.spos4 = 0;
+                Images.offsetTop = 0, Images.offsetLeft = 0;
+                Images.nowImage = null;
+                Images.clearSelection();
+                Images.closeDrag();
                 const file = files[0];
                 Images.originalImage = new Image;
                 Images.originalImage.src = URL.createObjectURL(file);
                 Images.originalImage.crossOrigin = 'Anonymous'; // CORS
                 Images.originalImage.addEventListener('load', () => Images.loadImage(Images.originalImage));
             },
+            loadOrigin() {
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                Images.pos1 = 0, Images.pos2 = 0, Images.pos3 = 0, Images.pos4 = 0;
+                Images.spos1 = 0, Images.spos2 = 0, Images.spos3 = 0, Images.spos4 = 0;
+                Images.offsetTop = 0, Images.offsetLeft = 0;
+                Images.nowImage = null;
+                Images.clearSelection();
+                Images.closeDrag();
+                Images.loadImage(Images.originalImage)
+            },
             loadImage(img) {
+                Images.offsetTop = 0, Images.offsetLeft = 0;
+                img.aspect = img.width / img.height;
+                if( img.height > Images.dpDiv.clientHeight ) {
+                    img.height = Images.dpDiv.clientHeight;
+                    img.width = img.aspect * img.height;
+                }
                 Images.nowImage = img;
                 Images.applyImage(img);
             },
             applyImage(img) {
                 Images.dpDiv.querySelector('canvas')?.remove()
                 Images.nowPixels = Images.getPixels(img);
-                // Images.nowCanvas = Images.makeCanvas(Images.nowImage);
+                Images.nowCanvas.setAttribute('id', 'ImagesNowCanvas')
                 Images.dpDiv.appendChild(Images.nowCanvas);
-                Images.nowCanvas.style.position = 'absolute';
-                Images.nowCanvas.addEventListener('mousedown', Images.mouseDown)
+                if( navigator.appVersion.match(/mobile/i) ) {
+                    Images.nowCanvas.addEventListener('touchstart', Images.mouseDown, { passive: false })
+                }
+                else {
+                    Images.nowCanvas.addEventListener('mousedown', Images.mouseDown, { passive: false })
+                }
                 // setTimeout(() => {
                 //     Images.nowCanvas.toBlob(blob => {
                 //         Images.nowImage = URL.createObjectURL(blob)
@@ -79,12 +141,14 @@
                     img = Images.makeCanvas(img, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight);
                     Images.nowCanvas = img;
                 }
-                Images.nowCtx = img.getContext('2d');
+                Images.nowCtx = img.getContext('2d', { willReadFrequently: true });
+                Images.nowCtx.imageSmoothingQuality = 'high'
                 return Images.nowCtx.getImageData(x, y, w==0?img.width:w, h==0?img.height:h);
             },
             makeCanvas(img, w, h) {
                 const image = Images.createCanvas(w??img.width, h??img.height);
-                Images.nowCtx = image.getContext('2d');
+                Images.nowCtx = image.getContext('2d', { willReadFrequently: true });
+                Images.nowCtx.imageSmoothingQuality = 'high'
                 if( img.width < w??img.width ) {
                     Images.offsetLeft = parseInt(w/2) - parseInt(img.width/2);
                 }
@@ -92,11 +156,9 @@
                     Images.offsetTop = parseInt(h/2) - parseInt(img.height/2);
                 }
                 if( img instanceof ImageData ) {
-                    console.log('imagedata');
                     Images.nowCtx.putImageData(img, Images.offsetLeft, Images.offsetTop)
                 }
                 else {
-                    console.log('no imagedata');
                     Images.nowCtx.drawImage(img, Images.offsetLeft, Images.offsetTop, img.width, img.height)
                 }
                 return image;
@@ -107,76 +169,184 @@
                 return c;
             },
             enlarge() {
-                Images.nowCtx.setTransform(1,0,0,1,0,0);
-                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
-                Images.scale += 0.1;
-                Images.nowCtx.setTransform(Images.scale,0,0,Images.scale,0,0);
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                Images.clearCanvas();
+                Images.nowImage.width *= 1.1;
+                Images.nowImage.height *= 1.1;
                 Images.paintCanvas();
             },
             reduce() {
-                Images.nowCtx.setTransform(1,0,0,1,0,0);
-                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
-                Images.scale -= 0.1;
-                if( Images.scale <= 0 ) {
-                    Images.scale = 0.1;
+                if( !Images.checkNowImage() ) {
+                    return;
                 }
-                Images.nowCtx.setTransform(Images.scale,0,0,Images.scale,0,0);
+                Images.clearCanvas();
+                Images.nowImage.width *= 0.9;
+                Images.nowImage.height *= 0.9;
                 Images.paintCanvas();
             },
             mouseDown(evt) {
                 evt.preventDefault();
-                Images.pos3 = evt.clientX;
-                Images.pos4 = evt.clientY;
-                document.addEventListener('mouseup', Images.closeDrag)
-                document.addEventListener('mousemove', Images.mouseDrag)
+                if( navigator.appVersion.match(/mobile/i) ) {
+                    Images.pos3 = parseInt(evt.touches[0].clientX);
+                    Images.pos4 = parseInt(evt.touches[0].clientY);
+                    document.addEventListener('touchend', Images.closeDrag, { passive: false })
+                    document.addEventListener('touchmove', Images.mouseDrag, { passive: false })
+                }
+                else {
+                    Images.pos3 = evt.clientX;
+                    Images.pos4 = evt.clientY;
+                    document.addEventListener('mouseup', Images.closeDrag, { passive: false })
+                    document.addEventListener('mousemove', Images.mouseDrag, { passive: false })
+                }
             },
             mouseDrag(evt) {
                 evt.preventDefault();
-                Images.pos1 = Images.pos3 - evt.clientX;
-                Images.pos2 = Images.pos4 - evt.clientY;
-                Images.pos3 = evt.clientX;
-                Images.pos4 = evt.clientY;
+                if( navigator.appVersion.match(/mobile/i) ) {
+                    Images.pos1 = Images.pos3 - parseInt(evt.touches[0].clientX);
+                    Images.pos2 = Images.pos4 - parseInt(evt.touches[0].clientY);
+                    Images.pos3 = parseInt(evt.touches[0].clientX);
+                    Images.pos4 = parseInt(evt.touches[0].clientY);
+                }
+                else {
+                    Images.pos1 = Images.pos3 - evt.clientX;
+                    Images.pos2 = Images.pos4 - evt.clientY;
+                    Images.pos3 = evt.clientX;
+                    Images.pos4 = evt.clientY;
+                }
                 Images.offsetTop -= Images.pos2;
                 Images.offsetLeft -= Images.pos1;
-                Images.nowCtx.setTransform(1,0,0,1,0,0);
-                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
-                Images.nowCtx.setTransform(Images.scale,0,0,Images.scale,0,0);
+                Images.clearCanvas();
                 Images.paintCanvas();
             },
             closeDrag() {
                 document.removeEventListener('mouseup', Images.closeDrag)
                 document.removeEventListener('mousemove', Images.mouseDrag)
+                document.removeEventListener('touchend', Images.closeDrag)
+                document.removeEventListener('touchmove', Images.mouseDrag)
+            },
+            clearCanvas() {
+                Images.nowCtx.setTransform(1,0,0,1,0,0);
+                Images.nowCtx.clearRect(0, 0, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight)
             },
             paintCanvas() {
-                console.log('Images.scale', Images.scale);
-                // if( Images.offsetLeft < 0 ) {
-                //     Images.offsetLeft = 0;
-                // }
-                const w = Images.scale * Images.originalImage.width;
-                const h = Images.scale * Images.originalImage.height;
-                // if( (w - Images.dpDiv.clientWidth) > 0 && Images.offsetLeft > (w - Images.dpDiv.clientWidth) ) {
-                //     Images.offsetLeft = w - Images.dpDiv.clientWidth;
-                // }
-                // else if( Images.offsetLeft > (Images.dpDiv.clientWidth - w) ) {
-                //     Images.offsetLeft = Images.dpDiv.clientWidth - w;
-                // }
-                // if( Images.offsetTop < 0 ) {
-                //     Images.offsetTop = 0;
-                // }
-                // if( Images.offsetTop > (h - Images.dpDiv.clientHeight) ) {
-                //     Images.offsetTop = h - Images.dpDiv.clientHeight;
-                // }
-                // else if( Images.offsetTop < (Images.dpDiv.clientHeight - h) ) {
-                //     Images.offsetTop = Images.dpDiv.clientHeight - h;
-                // }
-                Images.nowCtx.imageSmoothingQuality = 'high'
-                Images.nowCtx.drawImage(Images.originalImage, Images.offsetLeft, Images.offsetTop)
-                // Images.nowCtx.drawImage(Images.nowImage, Images.offsetLeft*-1, Images.offsetTop*-1)
-                // Images.nowCanvas.toBlob(blob => {
-                //     Images.nowImage = new Image;
-                //     Images.nowImage.src = URL.createObjectURL(blob)
-                //     Images.nowImage.crossOrigin = 'Anonymous'; // CORS
-                // }, 'image/jpeg', 1)
+                Images.nowCtx.drawImage(Images.nowImage, Images.offsetLeft, Images.offsetTop, Images.nowImage.width, Images.nowImage.height)
+            },
+            clearSelection() {
+                document.getElementById('ImagesNewBg')?.remove();
+                document.getElementById('ImagesNewSelection')?.remove();
+                Images.selectionCloseDrag()
+                Images.selectionMode = false;
+                document.querySelectorAll('.tool.active').forEach(obj => obj.classList.remove('active'))
+            },
+            checkNowImage() {
+                if( !Images.nowImage ) {
+                    alert('먼저 이미지를 선택하세요.');
+                    return false;
+                }
+                return true;
+            },
+            setSelection(obj) {
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                if( Images.selectionMode ) {
+                    Images.clearSelection();
+                    return;
+                }
+                obj.classList.add('active');
+                const newbg = document.createElement('div')
+                newbg.setAttribute('id', 'ImagesNewBg')
+                newbg.style.width = `${Images.dpDiv.clientWidth}px`
+                newbg.style.height = `${Images.dpDiv.clientHeight}px`
+                Images.dpDiv.append(newbg);
+                const newselection = document.createElement('div')
+                newselection.setAttribute('id', 'ImagesNewSelection')
+                Images.dpDiv.append(newselection);
+                newselection.style.left = `${(Images.dpDiv.clientWidth - newselection.clientWidth) / 2}px`
+                newselection.style.top = `${(Images.dpDiv.clientHeight - newselection.clientHeight) / 2}px`
+                if( navigator.appVersion.match(/mobile/i) ) {
+                    newselection.addEventListener('touchstart', Images.selectionMouseDown, { passive: false })
+                }
+                else {
+                    newselection.addEventListener('mousedown', Images.selectionMouseDown, { passive: false })
+                }
+                Images.selectionMode = true;
+            },
+            selectionMouseDown(evt) {
+                evt.preventDefault();
+                if( navigator.appVersion.match(/mobile/i) ) {
+                    Images.spos3 = parseInt(evt.touches[0].clientX);
+                    Images.spos4 = parseInt(evt.touches[0].clientY);
+                    document.addEventListener('touchend', Images.selectionCloseDrag, { passive: false })
+                    document.addEventListener('touchmove', Images.selectionMouseDrag, { passive: false })
+                }
+                else {
+                    Images.spos3 = evt.clientX;
+                    Images.spos4 = evt.clientY;
+                    document.addEventListener('mouseup', Images.selectionCloseDrag, { passive: false })
+                    document.addEventListener('mousemove', Images.selectionMouseDrag, { passive: false })
+                }
+            },
+            selectionMouseDrag(evt) {
+                evt.preventDefault();
+                if( navigator.appVersion.match(/mobile/i) ) {
+                    Images.spos1 = Images.spos3 - parseInt(evt.touches[0].clientX);
+                    Images.spos2 = Images.spos4 - parseInt(evt.touches[0].clientY);
+                    Images.spos3 = parseInt(evt.touches[0].clientX);
+                    Images.spos4 = parseInt(evt.touches[0].clientY);
+                }
+                else {
+                    Images.spos1 = Images.spos3 - evt.clientX;
+                    Images.spos2 = Images.spos4 - evt.clientY;
+                    Images.spos3 = evt.clientX;
+                    Images.spos4 = evt.clientY;
+                }
+                const newselection = document.getElementById('ImagesNewSelection')
+                let newtop = Number(newselection.style.top.replace(/[^0-9]/g,'')) - Images.spos2;
+                let newleft = Number(newselection.style.left.replace(/[^0-9]/g,'')) - Images.spos1;
+                console.log(newtop, newleft);
+                if( (Number(newtop) + Number(newselection.clientHeight)) > Images.dpDiv.clientHeight ) {
+                    newtop = Images.dpDiv.clientHeight - Number(newselection.clientHeight);
+                }
+                if( (Number(newleft) + Number(newselection.clientWidth)) > Images.dpDiv.clientWidth ) {
+                    newleft = Images.dpDiv.clientWidth - Number(newselection.clientWidth);
+                }
+                newselection.style.top = `${newtop}px`;
+                newselection.style.left = `${newleft}px`;
+            },
+            selectionCloseDrag() {
+                document.removeEventListener('mouseup', Images.selectionCloseDrag)
+                document.removeEventListener('mousemove', Images.selectionMouseDrag)
+                document.removeEventListener('touchend', Images.selectionCloseDrag)
+                document.removeEventListener('touchmove', Images.selectionMouseDrag)
+            },
+            cropSelection() {
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                const newselection = document.getElementById('ImagesNewSelection')
+                h = newselection.offsetHeight
+                w = newselection.offsetWidth
+                x = newselection.offsetLeft
+                y = newselection.offsetTop
+                Images.clearSelection();
+
+                const newimage = Images.nowCtx.getImageData(x, y, w, h)
+                Images.clearCanvas();
+                Images.nowCanvas.width = w;
+                Images.nowCanvas.height = h;
+                Images.nowCtx.putImageData(newimage, 0, 0, 0, 0, w, h)
+                Images.nowCanvas.willReadFrequently = true;
+                Images.nowCanvas.toBlob(blob => {
+                    Images.nowImage = new Image;
+                    Images.nowImage.src = URL.createObjectURL(blob);
+                    URL.revokeObjectURL(Images.nowImage);
+                    Images.nowImage.crossOrigin = 'Anonymous'; // CORS
+                    Images.nowImage.addEventListener('load', () => Images.loadImage(Images.nowImage));
+                }, 'image/png', 1)
+
             },
             crop(img, nx, ny, w, h) {
                 var w = w??img.width, h = h??img.height, pix = {x:[], y:[]}, x, y, index;
