@@ -20,6 +20,7 @@
             <div class="tool" onclick="Images.rotate(90)">+90도회전</div>
             <div class="tool" onclick="Images.flip('v')">상하반전</div>
             <div class="tool" onclick="Images.flip('h')">좌우반전</div>
+            <div class="tool" onclick="Images.auto()">자동</div>
         </div>
         <input type="file" name="userfile" id="userfile">
     </div>
@@ -65,7 +66,7 @@
             z-index: 12;
             background-color: rgb(255,255,255,0.5);
             width: 200px;
-            height: 300px;
+            height: 250px;
         }
     </style>
     <script src="fastclick.js"></script>
@@ -255,7 +256,9 @@
                     Images.clearSelection();
                     return;
                 }
-                obj.classList.add('active');
+                if( obj ) {
+                    obj.classList.add('active');
+                }
                 const newbg = document.createElement('div')
                 newbg.setAttribute('id', 'ImagesNewBg')
                 newbg.style.width = `${Images.dpDiv.clientWidth}px`
@@ -413,6 +416,55 @@
                 document.body.appendChild(newlink);
                 newlink.click();
                 newlink.remove();
+            },
+            auto() {
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                Images.setSelection();
+                const newselection = document.getElementById('ImagesNewSelection')
+                const dw = newselection.offsetWidth
+                const dh = newselection.offsetHeight
+                const daspect = dh / dw;
+                Images.clearSelection();
+                Images.clearCanvas();
+
+                const w = Images.nowImage.width;
+                const h = Images.nowImage.height;
+                const aspect = h / w;
+                if( daspect > aspect ) {
+                    Images.nowImage.width = h / daspect;
+                    Images.nowImage.height = dh;
+                }
+                else {
+                    Images.nowImage.width = dw;
+                    Images.nowImage.height = daspect * w;
+                }
+
+                Images.nowCanvas.width = Images.nowImage.width;
+                Images.nowCanvas.height = Images.nowImage.height;
+                Images.offsetLeft = 0, Images.offsetTop = 0;
+                Images.paintCanvas();
+
+                let newimage;
+                if( daspect > aspect ) {
+                    newimage = Images.nowCtx.getImageData(parseInt((Images.nowImage.width-dw)/2), 0, dw, dh)
+                }
+                else {
+                    newimage = Images.nowCtx.getImageData(0,parseInt((Images.nowImage.height-dh)/2), dw, dh)
+                }
+                Images.clearCanvas();
+                Images.nowCanvas.width = dw;
+                Images.nowCanvas.height = dh;
+                Images.nowCtx.putImageData(newimage, 0, 0, 0, 0, dw, dh)
+
+                Images.nowCanvas.toBlob(blob => {
+                    Images.nowImage = new Image;
+                    Images.nowImage.src = URL.createObjectURL(blob);
+                    URL.revokeObjectURL(Images.nowImage);
+                    Images.nowImage.crossOrigin = 'Anonymous'; // CORS
+                    Images.nowImage.addEventListener('load', () => Images.loadImage(Images.nowImage, 0));
+                }, 'image/png', 1)
             },
         };
         (function() {
