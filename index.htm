@@ -414,33 +414,6 @@
                 newlink.click();
                 newlink.remove();
             },
-            crop(img, nx, ny, w, h) {
-                var w = w??img.width, h = h??img.height, pix = {x:[], y:[]}, x, y, index;
-                for (y = ny??0; y < h; y++) {
-                    for (x = nx??0; x < w; x++) {
-                        index = (y * w + x) * 4;
-                        if (img.data[index+3] > 0) {
-                            pix.x.push(x);
-                            pix.y.push(y);
-                        }
-                    }
-                }
-                let px = 0, py = 0;
-                if( pix.x.length && pix.y.length ) {
-                    pix.x.sort(function(a,b){return a-b});
-                    pix.y.sort(function(a,b){return a-b});
-                    const n = pix.x.length-1;
-                    w = 1 + pix.x[n] - pix.x[0];
-                    h = 1 + pix.y[n] - pix.y[0];
-                    px = pix.x[0];
-                    py = pix.y[0];
-                    const cut = Images.getPixels(img, w, h, px, py);
-                    return cut;
-                }
-                else {
-                    return img;
-                }
-            }
         };
         (function() {
             Images.attach(document.getElementById('userfile'), document.getElementById('userfile_dp'));
