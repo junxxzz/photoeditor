@@ -10,16 +10,16 @@
     <div id="container">
         <div id="userfile_dp"></div>
         <div id="tools">
-            <div class="tool" onclick="Images.loadOrigin()">원본</div>
+            <div class="tool" onclick="Images.loadOrigin()">원본복원</div>
             <div class="tool" onclick="Images.reduce()">축소</div>
             <div class="tool" onclick="Images.enlarge()">확대</div>
+            <div class="tool" onclick="Images.setSelection(this)">영역선택</div>
+            <div class="tool" onclick="Images.cropSelection()">잘라내기</div>
+            <div class="tool" onclick="Images.saveLocal()">다운로드</div>
             <div class="tool" onclick="Images.rotate(-90)">-90도회전</div>
             <div class="tool" onclick="Images.rotate(90)">+90도회전</div>
             <div class="tool" onclick="Images.flip('v')">상하반전</div>
             <div class="tool" onclick="Images.flip('h')">좌우반전</div>
-            <div class="tool" onclick="Images.setSelection(this)">영역선택</div>
-            <div class="tool" onclick="Images.cropSelection()">잘라내기</div>
-            <div class="tool" onclick="Images.saveLocal()">다운로드</div>
         </div>
         <input type="file" name="userfile" id="userfile">
     </div>
@@ -35,10 +35,10 @@
             flex-direction: column;
         }
         #tools {
-            display: flex; gap: .5rem; flex-wrap: wrap;
+            display: flex; gap: .5rem; flex-wrap: wrap; font-size: .8rem;
         }
         .tool {
-            border: solid 1px black; padding: .5rem; user-select: none; cursor: pointer;
+            border: solid 1px black; padding: .2rem; user-select: none; cursor: pointer;
         }
         .tool.active {
             color: red;
