@@ -13,8 +13,13 @@
             <div class="tool" onclick="Images.loadOrigin()">원본</div>
             <div class="tool" onclick="Images.reduce()">축소</div>
             <div class="tool" onclick="Images.enlarge()">확대</div>
+            <div class="tool" onclick="Images.rotate(-90)">-90도회전</div>
+            <div class="tool" onclick="Images.rotate(90)">+90도회전</div>
+            <div class="tool" onclick="Images.revert('v')">상하반전</div>
+            <div class="tool" onclick="Images.revert('h')">좌우반전</div>
             <div class="tool" onclick="Images.setSelection(this)">영역선택</div>
             <div class="tool" onclick="Images.cropSelection()">잘라내기</div>
+            <div class="tool" onclick="Images.saveLocal()">다운로드</div>
         </div>
         <input type="file" name="userfile" id="userfile">
     </div>
@@ -30,10 +35,10 @@
             flex-direction: column;
         }
         #tools {
-            display: flex; gap: .5rem;
+            display: flex; gap: .5rem; flex-wrap: wrap;
         }
         .tool {
-            border: solid 1px black; padding: .5rem; user-select: none;
+            border: solid 1px black; padding: .5rem; user-select: none; cursor: pointer;
         }
         .tool.active {
             color: red;
@@ -43,7 +48,7 @@
             width: 360px;
             min-width: 360px;
             max-width: 360px;
-            height: 600px;
+            height: 500px;
             background-color: rgba(173, 216, 230, 0.473);
         }
         #ImagesNowCanvas {
@@ -107,10 +112,10 @@
                 Images.closeDrag();
                 Images.loadImage(Images.originalImage)
             },
-            loadImage(img) {
+            loadImage(img, aspect=1) {
                 Images.offsetTop = 0, Images.offsetLeft = 0;
                 img.aspect = img.width / img.height;
-                if( img.height > Images.dpDiv.clientHeight ) {
+                if( aspect && img.height > Images.dpDiv.clientHeight ) {
                     img.height = Images.dpDiv.clientHeight;
                     img.width = img.aspect * img.height;
                 }
@@ -128,26 +133,21 @@
                 else {
                     Images.nowCanvas.addEventListener('mousedown', Images.mouseDown, { passive: false })
                 }
-                // setTimeout(() => {
-                //     Images.nowCanvas.toBlob(blob => {
-                //         Images.nowImage = URL.createObjectURL(blob)
-                //         URL.revokeObjectURL(Images.nowImage);
-                //         console.log(Images.nowImage);
-                //     }, 'image/jpeg', 1)
-                // }, 10);
             },
             getPixels(img, x=0, y=0, w=0, h=0) {
                 if( !(img instanceof HTMLCanvasElement) ) {
-                    img = Images.makeCanvas(img, Images.dpDiv.clientWidth, Images.dpDiv.clientHeight);
+                    img = Images.makeCanvas(img, img.width>Images.dpDiv.clientWidth?img.width:Images.dpDiv.clientWidth, img.height>Images.dpDiv.clientHeight?img.height:Images.dpDiv.clientHeight);
                     Images.nowCanvas = img;
                 }
                 Images.nowCtx = img.getContext('2d', { willReadFrequently: true });
+                Images.nowCtx.setTransform(1, 0, 0, 1, 0, 0);
                 Images.nowCtx.imageSmoothingQuality = 'high'
                 return Images.nowCtx.getImageData(x, y, w==0?img.width:w, h==0?img.height:h);
             },
             makeCanvas(img, w, h) {
                 const image = Images.createCanvas(w??img.width, h??img.height);
                 Images.nowCtx = image.getContext('2d', { willReadFrequently: true });
+                Images.nowCtx.setTransform(1, 0, 0, 1, 0, 0);
                 Images.nowCtx.imageSmoothingQuality = 'high'
                 if( img.width < w??img.width ) {
                     Images.offsetLeft = parseInt(w/2) - parseInt(img.width/2);
@@ -306,7 +306,6 @@
                 const newselection = document.getElementById('ImagesNewSelection')
                 let newtop = Number(newselection.style.top.replace(/[^0-9]/g,'')) - Images.spos2;
                 let newleft = Number(newselection.style.left.replace(/[^0-9]/g,'')) - Images.spos1;
-                console.log(newtop, newleft);
                 if( (Number(newtop) + Number(newselection.clientHeight)) > Images.dpDiv.clientHeight ) {
                     newtop = Images.dpDiv.clientHeight - Number(newselection.clientHeight);
                 }
@@ -338,7 +337,6 @@
                 Images.nowCanvas.width = w;
                 Images.nowCanvas.height = h;
                 Images.nowCtx.putImageData(newimage, 0, 0, 0, 0, w, h)
-                Images.nowCanvas.willReadFrequently = true;
                 Images.nowCanvas.toBlob(blob => {
                     Images.nowImage = new Image;
                     Images.nowImage.src = URL.createObjectURL(blob);
@@ -347,6 +345,74 @@
                     Images.nowImage.addEventListener('load', () => Images.loadImage(Images.nowImage));
                 }, 'image/png', 1)
 
+            },
+            rotate(angle) {
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                if( String(angle).length==0 ) {
+                    alert('회전 각도를 정의하지 않았습니다.');
+                    return;
+                }
+                Images.clearCanvas();
+                const w = Images.nowImage.width
+                const h = Images.nowImage.height
+                Images.nowCanvas.width = h;
+                Images.nowCanvas.height = w;
+                if( angle==-90 ) {
+                    Images.nowCtx.translate(0, parseInt(Images.nowImage.width));
+                }
+                else if( angle==90 ) {
+                    Images.nowCtx.translate(parseInt(Images.nowImage.height), 0);
+                }
+                Images.nowCtx.rotate((parseInt(angle) * Math.PI) / 180)
+                Images.offsetLeft = 0, Images.offsetTop = 0;
+                Images.paintCanvas();
+                Images.nowCanvas.toBlob(blob => {
+                    Images.nowImage = new Image;
+                    Images.nowImage.src = URL.createObjectURL(blob);
+                    URL.revokeObjectURL(Images.nowImage);
+                    Images.nowImage.crossOrigin = 'Anonymous'; // CORS
+                    Images.nowImage.addEventListener('load', () => Images.loadImage(Images.nowImage, 0));
+                }, 'image/png', 1)
+            },
+            revert(g) {
+                if( !Images.checkNowImage() ) {
+                    return;
+                }
+                if( !String(g).match(/^(h|v)$/)) {
+                    alert('반전 형태를 정의하지 않았습니다.');
+                    return;
+                }
+                Images.clearCanvas();
+                Images.nowCanvas.width = Images.nowImage.width;
+                Images.nowCanvas.height = Images.nowImage.height;
+                if( g=='h' ) {
+                    Images.nowCtx.translate(parseInt(Images.nowImage.width), 0);
+                    Images.nowCtx.scale(-1, 1);
+                }
+                else if( g=='v' ) {
+                    Images.nowCtx.translate(0, parseInt(Images.nowImage.height));
+                    Images.nowCtx.scale(1, -1);
+                }
+                Images.offsetLeft = 0, Images.offsetTop = 0;
+                Images.paintCanvas();
+                Images.nowCanvas.toBlob(blob => {
+                    Images.nowImage = new Image;
+                    Images.nowImage.src = URL.createObjectURL(blob);
+                    URL.revokeObjectURL(Images.nowImage);
+                    Images.nowImage.crossOrigin = 'Anonymous'; // CORS
+                    Images.nowImage.addEventListener('load', () => Images.loadImage(Images.nowImage, 0));
+                }, 'image/png', 1)
+            },
+            saveLocal(filename) {
+                const newlink = document.createElement('a');
+                // newlink.href = Images.nowCanvas.toDataURL('image/png').replace('image/png', 'image/octet-stream');
+                newlink.href = Images.nowImage.src;
+                newlink.download = filename??'newimage.png';
+                document.body.appendChild(newlink);
+                newlink.click();
+                newlink.remove();
             },
             crop(img, nx, ny, w, h) {
                 var w = w??img.width, h = h??img.height, pix = {x:[], y:[]}, x, y, index;
